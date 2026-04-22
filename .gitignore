@@ -12,6 +12,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# test and coverage artifacts
+coverage/
+.vitest/
+
 
 # environment variables
 .env

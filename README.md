@@ -1,43 +1,71 @@
-# Astro Starter Kit: Minimal
+# Atlas of Living Mythologies
+
+Interactive mythology graph built with Astro + Svelte + Cytoscape.
+
+## MVP Features
+
+- Local-first mythology graph from seed data
+- Node exploration panel (type, era, summary, linked threads)
+- Add node form (Supabase-backed)
+- Add thread form (Supabase-backed)
+- Type filter, era filter, and text search on graph
+- Responsive layout for desktop and mobile
+- Optional Supabase Free integration through env variables
+
+## Tech Stack
+
+- Astro (app shell)
+- Svelte (interactive graph component)
+- Cytoscape.js (network visualization)
+- Supabase JS client (optional persistence layer)
+
+## Run Locally
+
+1. Install dependencies:
 
 ```sh
-npm create astro@latest -- --template minimal
+npm install
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+2. Optional: configure Supabase Free project:
 
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+```sh
+cp .env.example .env
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+Then fill `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY` in `.env`.
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+3. Start dev server:
 
-Any static assets, like images, can be placed in the `public/` directory.
+```sh
+npm run dev
+```
 
-## 🧞 Commands
+## Useful Commands
 
-All commands are run from the root of the project, from a terminal:
+- `npm run dev` - local development
+- `npm run build` - production build
+- `npm run preview` - preview built app
+- `npm run test` - run tests in watch mode
+- `npm run test:run` - run tests once
+- `npm run test:coverage` - run tests with coverage report
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+## Testing
 
-## 👀 Want to learn more?
+Test suite includes:
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+- Atlas utility unit tests (filters, search behavior, id generation, linked edges)
+- Seed data integrity tests (uniqueness, references, weight/type constraints)
+- Supabase schema safety tests (tables, RLS, grants, policies, seed blocks)
+
+Run quick validation before pushing:
+
+```sh
+npm run test:run && npm run build
+```
+
+## Next Steps
+
+- Add edit and delete actions for nodes and edges
+- Add graph zoom-to-selection and keyboard navigation
+- Add role-based write access with authenticated users
