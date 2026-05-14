@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+import { onMount } from 'svelte';
   import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
   import type { MythEdge, MythNode, MythNodeType } from '../data/mythSeed';
   import { hasSupabaseConfig, supabase } from '../lib/supabase';
@@ -39,6 +39,7 @@
   let typeFilter = $state<'all' | MythNodeType>('all');
   let eraFilter = $state('all');
   let searchQuery = $state('');
+  let supabaseChannel: any = null;
 
   const nodeColors: Record<MythNodeType, string> = {
     deity: '#f96f5d',
@@ -92,6 +93,12 @@
     typeFilter = 'all';
     eraFilter = 'all';
     searchQuery = '';
+  };
+
+  const fitGraph = () => {
+    if (!cy) return;
+    const visibleElements = cy.elements().filter((el) => el.style('display') !== 'none');
+    cy.fit(visibleElements.length ? visibleElements : cy.elements(), 48);
   };
 
   const addNodeToCy = (n: MythNode) => {
@@ -256,7 +263,7 @@
 
     // Real-time: add new nodes live if Supabase is connected
     if (supabase) {
-      supabase
+      supabaseChannel = supabase
         .channel('myth_nodes_rt')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'myth_nodes' }, (payload) => {
           const n = payload.new as MythNode;
@@ -270,6 +277,9 @@
     }
 
     return () => {
+      if (supabaseChannel) {
+        supabaseChannel.unsubscribe();
+      }
       cy?.destroy();
       cy = null;
     };
@@ -306,6 +316,7 @@
         </select>
       </label>
 
+      <button type="button" class="btn-action" onclick={fitGraph}>Fit graph</button>
       <button type="button" class="btn-reset" onclick={resetFilters}>Reset</button>
     </div>
 
@@ -435,7 +446,7 @@
 
   .graph-controls {
     display: grid;
-    grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(140px, 0.7fr)) auto;
+    grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(120px, 0.7fr)) auto;
     gap: 0.65rem;
     margin-bottom: 0.75rem;
   }
@@ -444,6 +455,24 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+  }
+
+  .btn-action {
+    align-self: end;
+    min-height: 42px;
+    padding: 0.55rem 0.9rem;
+    border: 2px solid #ccdaea;
+    border-radius: 10px;
+    background: #11243f;
+    color: #fff;
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .btn-action:hover {
+    background: #0c1930;
   }
 
   .control span {

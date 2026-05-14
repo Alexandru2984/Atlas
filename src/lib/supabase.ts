@@ -14,13 +14,19 @@ export const supabase = hasSupabaseConfig
 export async function fetchNodes(): Promise<MythNode[]> {
   if (!supabase) return seedNodes;
   const { data, error } = await supabase.from('myth_nodes').select('*').order('created_at');
-  if (error || !data?.length) return seedNodes;
-  return data as MythNode[];
+  if (error) {
+    console.warn('Supabase fetchNodes error:', error.message);
+    return seedNodes;
+  }
+  return (data ?? []) as MythNode[];
 }
 
 export async function fetchEdges(): Promise<MythEdge[]> {
   if (!supabase) return seedEdges;
   const { data, error } = await supabase.from('myth_edges').select('*').order('created_at');
-  if (error || !data?.length) return seedEdges;
-  return data as MythEdge[];
+  if (error) {
+    console.warn('Supabase fetchEdges error:', error.message);
+    return seedEdges;
+  }
+  return (data ?? []) as MythEdge[];
 }
