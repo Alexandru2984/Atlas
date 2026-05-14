@@ -64,6 +64,15 @@ export function removeEdge(edges: MythEdge[], edgeId: string): MythEdge[] {
   return edges.filter((edge) => edge.id !== edgeId);
 }
 
+export function clampZoom(zoom: number, min = 0.2, max = 4): number {
+  return Math.min(max, Math.max(min, zoom));
+}
+
+export function zoomLevel(zoom: number, step: number, direction: 'in' | 'out'): number {
+  const factor = direction === 'in' ? step : 1 / step;
+  return clampZoom(zoom * factor);
+}
+
 export function getLinkedEdges(nodeId: string, edges: MythEdge[]): MythEdge[] {
   return edges.filter((edge) => edge.source === nodeId || edge.target === nodeId);
 }

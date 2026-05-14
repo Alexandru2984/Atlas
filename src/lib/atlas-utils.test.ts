@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mythEdges, mythNodes } from '../data/mythSeed';
 import {
   buildEdgeId,
+  clampZoom,
   edgeIsVisible,
   getAvailableEras,
   getLinkedEdges,
@@ -13,7 +14,8 @@ import {
   slugifyNodeId,
   type AtlasFilterState,
   updateEdge,
-  updateNode
+  updateNode,
+  zoomLevel
 } from './atlas-utils';
 
 describe('atlas-utils', () => {
@@ -142,6 +144,21 @@ describe('atlas-utils', () => {
 
       expect(edgeIsVisible(edge, allVisible)).toBe(true);
       expect(edgeIsVisible(edge, oneMissing)).toBe(false);
+    });
+  });
+
+  describe('zoom helpers', () => {
+    it('clamps zoom values within bounds', () => {
+      expect(clampZoom(0.1)).toBe(0.2);
+      expect(clampZoom(10)).toBe(4);
+      expect(clampZoom(1.5)).toBe(1.5);
+    });
+
+    it('returns zoom in and zoom out levels with step', () => {
+      expect(zoomLevel(1, 1.2, 'in')).toBeCloseTo(1.2);
+      expect(zoomLevel(1.2, 1.2, 'out')).toBeCloseTo(1);
+      expect(zoomLevel(4, 1.2, 'in')).toBe(4);
+      expect(zoomLevel(0.2, 1.2, 'out')).toBe(0.2);
     });
   });
 

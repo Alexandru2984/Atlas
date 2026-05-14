@@ -5,6 +5,7 @@ import { onMount } from 'svelte';
   import { hasSupabaseConfig, signInWithEmail, signOutUser, supabase } from '../lib/supabase';
   import {
     buildEdgeId,
+    clampZoom,
     edgeIsVisible,
     getAvailableEras,
     getLinkedEdges,
@@ -193,10 +194,38 @@ import { onMount } from 'svelte';
     cy?.getElementById(id).remove();
   };
 
+  const graphZoomStep = 1.2;
+
   const fitGraph = () => {
     if (!cy) return;
     const visibleElements = cy.elements().filter((el) => el.style('display') !== 'none');
     cy.fit(visibleElements.length ? visibleElements : cy.elements(), 48);
+  };
+
+  const zoomBy = (factor: number) => {
+    if (!cy) return;
+    cy.zoom(clampZoom(cy.zoom() * factor));
+  };
+
+  const zoomIn = () => zoomBy(graphZoomStep);
+  const zoomOut = () => zoomBy(1 / graphZoomStep);
+
+  const resetView = () => {
+    if (!cy) return;
+    cy.reset();
+    fitGraph();
+  };
+
+  const focusSelectedNode = () => {
+    if (!cy) return;
+    if (selectedNode) {
+      const element = cy.getElementById(selectedNode.id);
+      if (element?.length) {
+        cy.fit(element, 60);
+        return;
+      }
+    }
+    fitGraph();
   };
 
   const addNodeToCy = (n: MythNode) => {
@@ -496,6 +525,10 @@ import { onMount } from 'svelte';
       </label>
 
       <button type="button" class="btn-action" onclick={fitGraph}>Fit graph</button>
+      <button type="button" class="btn-action" onclick={zoomIn}>Zoom In</button>
+      <button type="button" class="btn-action" onclick={zoomOut}>Zoom Out</button>
+      <button type="button" class="btn-action" onclick={focusSelectedNode}>Focus selected</button>
+      <button type="button" class="btn-action" onclick={resetView}>Reset View</button>
       <button type="button" class="btn-reset" onclick={resetFilters}>Reset</button>
     </div>
 
@@ -696,8 +729,9 @@ import { onMount } from 'svelte';
   }
 
   .graph-controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(120px, 0.7fr)) auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
     gap: 0.65rem;
     margin-bottom: 0.75rem;
   }
@@ -706,13 +740,14 @@ import { onMount } from 'svelte';
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    flex: 1 1 240px;
+    min-width: 220px;
   }
 
   .btn-action {
-    align-self: end;
     min-height: 42px;
     padding: 0.55rem 0.9rem;
-    border: 2px solid #ccdaea;
+    border: 2px solid #11243f;
     border-radius: 10px;
     background: #11243f;
     color: #fff;
@@ -1009,15 +1044,14 @@ import { onMount } from 'svelte';
     }
 
     .graph-controls {
-      grid-template-columns: 1fr 1fr;
+      justify-content: stretch;
     }
 
-    .control.search {
-      grid-column: 1 / -1;
-    }
-
+    .control.search,
+    .btn-action,
     .btn-reset {
-      grid-column: 1 / -1;
+      flex: 1 1 100%;
+      min-width: auto;
     }
 
     .graph-canvas {
