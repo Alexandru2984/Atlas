@@ -27,8 +27,10 @@ alter table myth_nodes enable row level security;
 alter table myth_edges enable row level security;
 
 grant usage on schema public to anon, authenticated;
-grant select, insert on table myth_nodes to anon, authenticated;
-grant select, insert on table myth_edges to anon, authenticated;
+grant select on table myth_nodes to anon, authenticated;
+grant update, insert, delete on table myth_nodes to authenticated;
+grant select on table myth_edges to anon, authenticated;
+grant update, insert, delete on table myth_edges to authenticated;
 
 -- Public read access (anon key can read, no auth required)
 drop policy if exists "Public read nodes" on myth_nodes;
@@ -41,16 +43,37 @@ create policy "Public read edges"
   on myth_edges for select
   using (true);
 
--- Public insert access (anon key can insert)
-drop policy if exists "Public insert nodes" on myth_nodes;
-create policy "Public insert nodes"
+-- Authenticated insert/update/delete access for nodes
+drop policy if exists "Authenticated insert nodes" on myth_nodes;
+create policy "Authenticated insert nodes"
   on myth_nodes for insert
-  with check (true);
+  with check (auth.role() = 'authenticated');
 
-drop policy if exists "Public insert edges" on myth_edges;
-create policy "Public insert edges"
+drop policy if exists "Authenticated update nodes" on myth_nodes;
+create policy "Authenticated update nodes"
+  on myth_nodes for update
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated delete nodes" on myth_nodes;
+create policy "Authenticated delete nodes"
+  on myth_nodes for delete
+  using (auth.role() = 'authenticated');
+
+-- Authenticated insert/update/delete access for edges
+drop policy if exists "Authenticated insert edges" on myth_edges;
+create policy "Authenticated insert edges"
   on myth_edges for insert
-  with check (true);
+  with check (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated update edges" on myth_edges;
+create policy "Authenticated update edges"
+  on myth_edges for update
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated delete edges" on myth_edges;
+create policy "Authenticated delete edges"
+  on myth_edges for delete
+  using (auth.role() = 'authenticated');
 
 -- ─── Seed data ──────────────────────────────────────────────────────────────
 

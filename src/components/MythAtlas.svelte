@@ -2,7 +2,7 @@
 import { onMount } from 'svelte';
   import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
   import type { MythEdge, MythNode, MythNodeType } from '../data/mythSeed';
-  import { hasSupabaseConfig, supabase } from '../lib/supabase';
+  import { hasSupabaseConfig, signInWithEmail, signOutUser, supabase } from '../lib/supabase';
   import {
     buildEdgeId,
     edgeIsVisible,
@@ -41,7 +41,13 @@ import { onMount } from 'svelte';
   let typeFilter = $state<'all' | MythNodeType>('all');
   let eraFilter = $state('all');
   let searchQuery = $state('');
+  let currentUser: any = $state(null);
+  let authEmail = $state('');
+  let authPassword = $state('');
+  let authError = $state('');
+  let authLoading = $state(false);
   let supabaseChannel: any = null;
+  let authSubscription: any = null;
 
   const nodeColors: Record<MythNodeType, string> = {
     deity: '#f96f5d',
@@ -123,6 +129,30 @@ import { onMount } from 'svelte';
     activePanel = 'inspect';
   };
 
+  const canMutate = () => !hasSupabaseConfig || Boolean(currentUser);
+
+  const signIn = async () => {
+    if (!supabase) return;
+    authLoading = true;
+    authError = '';
+
+    const { data, error } = await signInWithEmail(authEmail, authPassword);
+    if (error) {
+      authError = error.message || 'Unable to sign in';
+      authLoading = false;
+      return;
+    }
+
+    currentUser = data.user;
+    authLoading = false;
+  };
+
+  const signOut = async () => {
+    if (!supabase) return;
+    await signOutUser();
+    currentUser = null;
+  };
+
   const updateNodeInState = (node: MythNode) => {
     nodeState = nodeState.map((n) => (n.id === node.id ? node : n));
     if (selectedNode?.id === node.id) {
@@ -188,6 +218,10 @@ import { onMount } from 'svelte';
   // ── Form submit handlers ──────────────────────────────────
   const handleAddNode = async () => {
     if (!newNode.label.trim() || !newNode.era.trim()) return;
+    if (!canMutate()) {
+      saveError = 'Sign in to make changes.';
+      return;
+    }
     saving = true;
     saveError = '';
     const node: MythNode = {
@@ -216,6 +250,10 @@ import { onMount } from 'svelte';
 
   const handleAddEdge = async () => {
     if (!newEdge.source || !newEdge.target || !newEdge.relation.trim()) return;
+    if (!canMutate()) {
+      saveError = 'Sign in to make changes.';
+      return;
+    }
     saving = true;
     saveError = '';
     const edge: MythEdge = {
@@ -244,6 +282,10 @@ import { onMount } from 'svelte';
 
   const handleDeleteNode = async (id: string) => {
     if (!window.confirm('Delete this node and its linked threads?')) return;
+    if (!canMutate()) {
+      saveError = 'Sign in to make changes.';
+      return;
+    }
     saving = true;
     saveError = '';
 
@@ -262,6 +304,10 @@ import { onMount } from 'svelte';
 
   const handleDeleteEdge = async (id: string) => {
     if (!window.confirm('Delete this mythic thread?')) return;
+    if (!canMutate()) {
+      saveError = 'Sign in to make changes.';
+      return;
+    }
     saving = true;
     saveError = '';
 
@@ -289,7 +335,7 @@ import { onMount } from 'svelte';
     applyGraphFilters();
   });
 
-  onMount(() => {
+  onMount(async () => {
     if (!cyContainer) {
       return;
     }
@@ -381,6 +427,16 @@ import { onMount } from 'svelte';
       selectNodeById(nodeState[0].id);
     }
 
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      currentUser = data.session?.user ?? null;
+
+      const { data: authData } = supabase.auth.onAuthStateChange((_event, session) => {
+        currentUser = session?.user ?? null;
+      });
+      authSubscription = authData?.subscription ?? null;
+    }
+
     // Real-time: add new nodes live if Supabase is connected
     if (supabase) {
       supabaseChannel = supabase
@@ -399,6 +455,9 @@ import { onMount } from 'svelte';
     return () => {
       if (supabaseChannel) {
         supabaseChannel.unsubscribe();
+      }
+      if (authSubscription) {
+        authSubscription.unsubscribe();
       }
       cy?.destroy();
       cy = null;
@@ -446,17 +505,37 @@ import { onMount } from 'svelte';
   <aside class="panel info">
     <nav class="tab-bar">
       <button type="button" class:active={activePanel === 'inspect'} onclick={() => activePanel = 'inspect'}>Inspect</button>
-      <button type="button" class:active={activePanel === 'add-node'} onclick={() => activePanel = 'add-node'}>+ Node</button>
-      <button type="button" class:active={activePanel === 'add-edge'} onclick={() => activePanel = 'add-edge'}>+ Thread</button>
+      <button
+        type="button"
+        class:active={activePanel === 'add-node'}
+        onclick={() => activePanel = 'add-node'}
+        disabled={hasSupabaseConfig && !currentUser}
+        title={hasSupabaseConfig && !currentUser ? 'Sign in to add nodes' : 'Add a new node'}
+      >
+        + Node
+      </button>
+      <button
+        type="button"
+        class:active={activePanel === 'add-edge'}
+        onclick={() => activePanel = 'add-edge'}
+        disabled={hasSupabaseConfig && !currentUser}
+        title={hasSupabaseConfig && !currentUser ? 'Sign in to add threads' : 'Add a new thread'}
+      >
+        + Thread
+      </button>
     </nav>
 
     {#if activePanel === 'inspect'}
       <p class="eyebrow">Atlas Node</p>
       {#if selectedNode}
-        <div class="panel-actions">
-          <button type="button" class="btn-edit" onclick={() => startEditNode(selectedNode)}>Edit Node</button>
-          <button type="button" class="btn-delete" onclick={() => handleDeleteNode(selectedNode.id)}>Delete Node</button>
-        </div>
+        {#if canMutate()}
+          <div class="panel-actions">
+            <button type="button" class="btn-edit" onclick={() => startEditNode(selectedNode)}>Edit Node</button>
+            <button type="button" class="btn-delete" onclick={() => handleDeleteNode(selectedNode.id)}>Delete Node</button>
+          </div>
+        {:else}
+          <p class="auth-hint">Sign in to edit or delete this node.</p>
+        {/if}
         <h2>{selectedNode.label}</h2>
         <p class="meta">Type: {selectedNode.type} | Era: {selectedNode.era}</p>
         <p class="summary">{selectedNode.summary}</p>
@@ -465,10 +544,12 @@ import { onMount } from 'svelte';
           {#each linkedEdges as edge}
             <li>
               <span>{edge.relation} ({edge.source === selectedNode.id ? 'to' : 'from'} {edge.source === selectedNode.id ? edge.target : edge.source})</span>
-              <div class="edge-actions">
-                <button type="button" class="btn-edit small" onclick={() => startEditEdge(edge)}>Edit</button>
-                <button type="button" class="btn-delete small" onclick={() => handleDeleteEdge(edge.id)}>Delete</button>
-              </div>
+              {#if canMutate()}
+                <div class="edge-actions">
+                  <button type="button" class="btn-edit small" onclick={() => startEditEdge(edge)}>Edit</button>
+                  <button type="button" class="btn-delete small" onclick={() => handleDeleteEdge(edge.id)}>Delete</button>
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -503,13 +584,16 @@ import { onMount } from 'svelte';
         </label>
         {#if saveError}<p class="form-error">{saveError}</p>{/if}
         <div class="form-row">
-          <button type="submit" class="btn-save" disabled={saving}>
+          <button type="submit" class="btn-save" disabled={saving || !canMutate()}>
             {saving ? 'Saving…' : editingNodeId ? 'Save Node' : 'Add to Atlas'}
           </button>
           {#if editingNodeId}
             <button type="button" class="btn-reset" onclick={cancelEdit}>Cancel</button>
           {/if}
         </div>
+        {#if hasSupabaseConfig && !currentUser}
+          <p class="auth-hint">Sign in to persist node changes in Supabase.</p>
+        {/if}
       </form>
 
     {:else if activePanel === 'add-edge' || activePanel === 'edit-edge'}
@@ -543,23 +627,53 @@ import { onMount } from 'svelte';
         </label>
         {#if saveError}<p class="form-error">{saveError}</p>{/if}
         <div class="form-row">
-          <button type="submit" class="btn-save" disabled={saving}>
+          <button type="submit" class="btn-save" disabled={saving || !canMutate()}>
             {saving ? 'Saving…' : editingEdgeId ? 'Save Thread' : 'Weave Thread'}
           </button>
           {#if editingEdgeId}
             <button type="button" class="btn-reset" onclick={cancelEdit}>Cancel</button>
           {/if}
         </div>
+        {#if hasSupabaseConfig && !currentUser}
+          <p class="auth-hint">Sign in to persist thread changes in Supabase.</p>
+        {/if}
       </form>
     {/if}
 
     <div class="status {hasSupabaseConfig ? 'ok' : 'warn'}">
       {#if hasSupabaseConfig}
-        Supabase connected — changes persist in real-time.
+        {#if currentUser}
+          Signed in as <strong>{currentUser.email ?? currentUser.id}</strong> — changes persist in real-time.
+        {:else}
+          Supabase connected — sign in to add, edit, or delete graph content.
+        {/if}
       {:else}
         Local mode — add PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY in .env.
       {/if}
     </div>
+
+    {#if hasSupabaseConfig}
+      <div class="auth-panel">
+        {#if currentUser}
+          <p>Authenticated as <strong>{currentUser.email ?? currentUser.id}</strong>.</p>
+          <button type="button" class="btn-signout" onclick={signOut}>Sign out</button>
+        {:else}
+          <p class="eyebrow">Sign in to manage the Atlas</p>
+          <label>
+            Email
+            <input type="email" bind:value={authEmail} placeholder="you@example.com" />
+          </label>
+          <label>
+            Password
+            <input type="password" bind:value={authPassword} placeholder="••••••••" />
+          </label>
+          {#if authError}<p class="form-error">{authError}</p>{/if}
+          <button type="button" class="btn-save" onclick={signIn} disabled={authLoading}>
+            {authLoading ? 'Signing in…' : 'Sign in'}
+          </button>
+        {/if}
+      </div>
+    {/if}
   </aside>
 </section>
 
@@ -860,9 +974,33 @@ import { onMount } from 'svelte';
     color: #145540;
   }
 
-  .status.warn {
-    background: #fff2dd;
-    color: #6f4e00;
+  .auth-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.85rem 0.8rem;
+    border-radius: 18px;
+    background: #f7fbff;
+    margin-top: 0.75rem;
+  }
+
+  .btn-signout {
+    align-self: start;
+    min-height: 42px;
+    padding: 0.55rem 0.9rem;
+    border: 2px solid #ccdaea;
+    border-radius: 10px;
+    background: #f5f9ff;
+    color: #183150;
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .auth-hint {
+    margin: 0;
+    color: #6b4f1a;
+    font-size: 0.9rem;
   }
 
   @media (max-width: 900px) {

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type User } from '@supabase/supabase-js';
 import { mythNodes as seedNodes, mythEdges as seedEdges } from '../data/mythSeed';
 import type { MythEdge, MythNode } from '../data/mythSeed';
 
@@ -10,6 +10,26 @@ export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
 export const supabase = hasSupabaseConfig
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
+
+export async function getCurrentUser(): Promise<User | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    console.warn('Supabase auth.getSession error:', error.message);
+    return null;
+  }
+  return data.session?.user ?? null;
+}
+
+export async function signInWithEmail(email: string, password: string) {
+  if (!supabase) return { error: new Error('Supabase is not configured') };
+  return await supabase.auth.signInWithPassword({ email, password });
+}
+
+export async function signOutUser() {
+  if (!supabase) return { error: new Error('Supabase is not configured') };
+  return await supabase.auth.signOut();
+}
 
 export async function fetchNodes(): Promise<MythNode[]> {
   if (!supabase) return seedNodes;
