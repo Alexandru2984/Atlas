@@ -8,8 +8,12 @@ import {
   getVisibleNodeIds,
   nodeMatchesFilters,
   normalizeSearchQuery,
+  removeEdge,
+  removeNode,
   slugifyNodeId,
-  type AtlasFilterState
+  type AtlasFilterState,
+  updateEdge,
+  updateNode
 } from './atlas-utils';
 
 describe('atlas-utils', () => {
@@ -138,6 +142,41 @@ describe('atlas-utils', () => {
 
       expect(edgeIsVisible(edge, allVisible)).toBe(true);
       expect(edgeIsVisible(edge, oneMissing)).toBe(false);
+    });
+  });
+
+  describe('updateNode', () => {
+    it('replaces an existing node in the list', () => {
+      const updated = { ...mythNodes[0], summary: 'Changed summary' };
+      const result = updateNode(mythNodes, updated);
+      expect(result.find((node) => node.id === updated.id)).toEqual(updated);
+      expect(result.length).toBe(mythNodes.length);
+    });
+  });
+
+  describe('updateEdge', () => {
+    it('replaces an existing edge in the list', () => {
+      const updated = { ...mythEdges[0], relation: 'protected' };
+      const result = updateEdge(mythEdges, updated);
+      expect(result.find((edge) => edge.id === updated.id)).toEqual(updated);
+      expect(result.length).toBe(mythEdges.length);
+    });
+  });
+
+  describe('removeNode', () => {
+    it('removes a node and any connected edges', () => {
+      const { nodes, edges } = removeNode(mythNodes, mythEdges, 'n-sylvar');
+      expect(nodes.some((node) => node.id === 'n-sylvar')).toBe(false);
+      expect(edges.every((edge) => edge.source !== 'n-sylvar' && edge.target !== 'n-sylvar')).toBe(true);
+      expect(nodes.length).toBe(mythNodes.length - 1);
+    });
+  });
+
+  describe('removeEdge', () => {
+    it('removes a single edge by id', () => {
+      const result = removeEdge(mythEdges, 'e-2');
+      expect(result.some((edge) => edge.id === 'e-2')).toBe(false);
+      expect(result.length).toBe(mythEdges.length - 1);
     });
   });
 

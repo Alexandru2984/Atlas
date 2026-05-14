@@ -45,6 +45,25 @@ export function edgeIsVisible(edge: MythEdge, visibleNodeIds: Set<string>): bool
   return visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target);
 }
 
+export function updateNode(nodes: MythNode[], updated: MythNode): MythNode[] {
+  return nodes.map((node) => (node.id === updated.id ? updated : node));
+}
+
+export function updateEdge(edges: MythEdge[], updated: MythEdge): MythEdge[] {
+  return edges.map((edge) => (edge.id === updated.id ? updated : edge));
+}
+
+export function removeNode(nodes: MythNode[], edges: MythEdge[], nodeId: string): { nodes: MythNode[]; edges: MythEdge[] } {
+  return {
+    nodes: nodes.filter((node) => node.id !== nodeId),
+    edges: edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
+  };
+}
+
+export function removeEdge(edges: MythEdge[], edgeId: string): MythEdge[] {
+  return edges.filter((edge) => edge.id !== edgeId);
+}
+
 export function getLinkedEdges(nodeId: string, edges: MythEdge[]): MythEdge[] {
   return edges.filter((edge) => edge.source === nodeId || edge.target === nodeId);
 }

@@ -25,13 +25,15 @@ import { onMount } from 'svelte';
   let linkedEdges = $state<MythEdge[]>([]);
 
   // ── Form state ────────────────────────────────────────────
-  type Panel = 'inspect' | 'add-node' | 'add-edge';
+  type Panel = 'inspect' | 'add-node' | 'add-edge' | 'edit-node' | 'edit-edge';
   let activePanel = $state<Panel>('inspect');
 
   const emptyNode = () => ({ label: '', type: 'deity' as MythNodeType, era: '', summary: '' });
   const emptyEdge = () => ({ source: '', target: '', relation: '', weight: 3 });
   let newNode = $state(emptyNode());
   let newEdge = $state(emptyEdge());
+  let editingNodeId = $state<string | null>(null);
+  let editingEdgeId = $state<string | null>(null);
   let saving = $state(false);
   let saveError = $state('');
   let nodeState = $state<MythNode[]>([]);
@@ -95,6 +97,72 @@ import { onMount } from 'svelte';
     searchQuery = '';
   };
 
+  const resetEditState = () => {
+    editingNodeId = null;
+    editingEdgeId = null;
+    newNode = emptyNode();
+    newEdge = emptyEdge();
+  };
+
+  const startEditNode = (node: MythNode) => {
+    editingNodeId = node.id;
+    newNode = { ...node };
+    activePanel = 'edit-node';
+    saveError = '';
+  };
+
+  const startEditEdge = (edge: MythEdge) => {
+    editingEdgeId = edge.id;
+    newEdge = { ...edge };
+    activePanel = 'edit-edge';
+    saveError = '';
+  };
+
+  const cancelEdit = () => {
+    resetEditState();
+    activePanel = 'inspect';
+  };
+
+  const updateNodeInState = (node: MythNode) => {
+    nodeState = nodeState.map((n) => (n.id === node.id ? node : n));
+    if (selectedNode?.id === node.id) {
+      selectedNode = node;
+    }
+    const cyNode = cy?.getElementById(node.id);
+    if (cyNode?.length) {
+      cyNode.data({ label: node.label, type: node.type, color: nodeColors[node.type] });
+    }
+  };
+
+  const updateEdgeInState = (edge: MythEdge) => {
+    edgeState = edgeState.map((e) => (e.id === edge.id ? edge : e));
+    if (selectedNode) {
+      linkedEdges = getLinkedEdges(selectedNode.id, edgeState);
+    }
+    const cyEdge = cy?.getElementById(edge.id);
+    if (cyEdge?.length) {
+      cyEdge.data({ relation: edge.relation, weight: edge.weight });
+    }
+  };
+
+  const removeNodeFromState = (id: string) => {
+    nodeState = nodeState.filter((node) => node.id !== id);
+    edgeState = edgeState.filter((edge) => edge.source !== id && edge.target !== id);
+    if (selectedNode?.id === id) {
+      selectedNode = null;
+    }
+    cy?.getElementById(id).remove();
+    cy?.edges().filter((edge) => edge.source().id() === id || edge.target().id() === id).remove();
+  };
+
+  const removeEdgeFromState = (id: string) => {
+    edgeState = edgeState.filter((edge) => edge.id !== id);
+    if (selectedNode) {
+      linkedEdges = getLinkedEdges(selectedNode.id, edgeState);
+    }
+    cy?.getElementById(id).remove();
+  };
+
   const fitGraph = () => {
     if (!cy) return;
     const visibleElements = cy.elements().filter((el) => el.style('display') !== 'none');
@@ -122,15 +190,26 @@ import { onMount } from 'svelte';
     if (!newNode.label.trim() || !newNode.era.trim()) return;
     saving = true;
     saveError = '';
-    const node: MythNode = { id: slugifyNodeId(newNode.label), ...newNode };
+    const node: MythNode = {
+      id: editingNodeId ?? slugifyNodeId(newNode.label),
+      ...newNode
+    };
 
     if (supabase) {
-      const { error } = await supabase.from('myth_nodes').insert(node);
-      if (error) { saveError = error.message; saving = false; return; }
+      const result = editingNodeId
+        ? await supabase.from('myth_nodes').update({ label: node.label, type: node.type, era: node.era, summary: node.summary }).eq('id', node.id)
+        : await supabase.from('myth_nodes').insert(node);
+      if (result.error) { saveError = result.error.message; saving = false; return; }
     }
-    addNodeToCy(node);
-    selectNodeById(node.id);
-    newNode = emptyNode();
+
+    if (editingNodeId) {
+      updateNodeInState(node);
+    } else {
+      addNodeToCy(node);
+      selectNodeById(node.id);
+    }
+
+    resetEditState();
     saving = false;
     activePanel = 'inspect';
   };
@@ -140,17 +219,58 @@ import { onMount } from 'svelte';
     saving = true;
     saveError = '';
     const edge: MythEdge = {
-      id: buildEdgeId(newEdge.source, newEdge.target, Date.now()),
+      id: editingEdgeId ?? buildEdgeId(newEdge.source, newEdge.target, Date.now()),
       ...newEdge,
       weight: Number(newEdge.weight)
     };
 
     if (supabase) {
-      const { error } = await supabase.from('myth_edges').insert(edge);
+      const result = editingEdgeId
+        ? await supabase.from('myth_edges').update({ source: edge.source, target: edge.target, relation: edge.relation, weight: edge.weight }).eq('id', edge.id)
+        : await supabase.from('myth_edges').insert(edge);
+      if (result.error) { saveError = result.error.message; saving = false; return; }
+    }
+
+    if (editingEdgeId) {
+      updateEdgeInState(edge);
+    } else {
+      addEdgeToCy(edge);
+    }
+
+    resetEditState();
+    saving = false;
+    activePanel = 'inspect';
+  };
+
+  const handleDeleteNode = async (id: string) => {
+    if (!window.confirm('Delete this node and its linked threads?')) return;
+    saving = true;
+    saveError = '';
+
+    if (supabase) {
+      const { error: edgeError } = await supabase.from('myth_edges').delete().or(`source.eq.${id},target.eq.${id}`);
+      if (edgeError) { saveError = edgeError.message; saving = false; return; }
+
+      const { error } = await supabase.from('myth_nodes').delete().eq('id', id);
       if (error) { saveError = error.message; saving = false; return; }
     }
-    addEdgeToCy(edge);
-    newEdge = emptyEdge();
+
+    removeNodeFromState(id);
+    saving = false;
+    activePanel = 'inspect';
+  };
+
+  const handleDeleteEdge = async (id: string) => {
+    if (!window.confirm('Delete this mythic thread?')) return;
+    saving = true;
+    saveError = '';
+
+    if (supabase) {
+      const { error } = await supabase.from('myth_edges').delete().eq('id', id);
+      if (error) { saveError = error.message; saving = false; return; }
+    }
+
+    removeEdgeFromState(id);
     saving = false;
     activePanel = 'inspect';
   };
@@ -333,6 +453,10 @@ import { onMount } from 'svelte';
     {#if activePanel === 'inspect'}
       <p class="eyebrow">Atlas Node</p>
       {#if selectedNode}
+        <div class="panel-actions">
+          <button type="button" class="btn-edit" onclick={() => startEditNode(selectedNode)}>Edit Node</button>
+          <button type="button" class="btn-delete" onclick={() => handleDeleteNode(selectedNode.id)}>Delete Node</button>
+        </div>
         <h2>{selectedNode.label}</h2>
         <p class="meta">Type: {selectedNode.type} | Era: {selectedNode.era}</p>
         <p class="summary">{selectedNode.summary}</p>
@@ -340,8 +464,11 @@ import { onMount } from 'svelte';
         <ul>
           {#each linkedEdges as edge}
             <li>
-              {edge.relation} ({edge.source === selectedNode.id ? 'to' : 'from'}
-              {edge.source === selectedNode.id ? edge.target : edge.source})
+              <span>{edge.relation} ({edge.source === selectedNode.id ? 'to' : 'from'} {edge.source === selectedNode.id ? edge.target : edge.source})</span>
+              <div class="edge-actions">
+                <button type="button" class="btn-edit small" onclick={() => startEditEdge(edge)}>Edit</button>
+                <button type="button" class="btn-delete small" onclick={() => handleDeleteEdge(edge.id)}>Delete</button>
+              </div>
             </li>
           {/each}
         </ul>
@@ -349,8 +476,8 @@ import { onMount } from 'svelte';
         <p class="hint">Click a node in the graph to inspect its mythic threads.</p>
       {/if}
 
-    {:else if activePanel === 'add-node'}
-      <p class="eyebrow">New Myth Node</p>
+    {:else if activePanel === 'add-node' || activePanel === 'edit-node'}
+      <p class="eyebrow">{editingNodeId ? 'Edit Myth Node' : 'New Myth Node'}</p>
       <form onsubmit={(event) => { event.preventDefault(); handleAddNode(); }}>
         <label>
           Name *
@@ -375,13 +502,18 @@ import { onMount } from 'svelte';
           <textarea bind:value={newNode.summary} rows="3" placeholder="Brief description..."></textarea>
         </label>
         {#if saveError}<p class="form-error">{saveError}</p>{/if}
-        <button type="submit" class="btn-save" disabled={saving}>
-          {saving ? 'Saving…' : 'Add to Atlas'}
-        </button>
+        <div class="form-row">
+          <button type="submit" class="btn-save" disabled={saving}>
+            {saving ? 'Saving…' : editingNodeId ? 'Save Node' : 'Add to Atlas'}
+          </button>
+          {#if editingNodeId}
+            <button type="button" class="btn-reset" onclick={cancelEdit}>Cancel</button>
+          {/if}
+        </div>
       </form>
 
-    {:else if activePanel === 'add-edge'}
-      <p class="eyebrow">New Mythic Thread</p>
+    {:else if activePanel === 'add-edge' || activePanel === 'edit-edge'}
+      <p class="eyebrow">{editingEdgeId ? 'Edit Mythic Thread' : 'New Mythic Thread'}</p>
       <form onsubmit={(event) => { event.preventDefault(); handleAddEdge(); }}>
         <label>
           From *
@@ -410,9 +542,14 @@ import { onMount } from 'svelte';
           <input type="range" min="1" max="5" bind:value={newEdge.weight} />
         </label>
         {#if saveError}<p class="form-error">{saveError}</p>{/if}
-        <button type="submit" class="btn-save" disabled={saving}>
-          {saving ? 'Saving…' : 'Weave Thread'}
-        </button>
+        <div class="form-row">
+          <button type="submit" class="btn-save" disabled={saving}>
+            {saving ? 'Saving…' : editingEdgeId ? 'Save Thread' : 'Weave Thread'}
+          </button>
+          {#if editingEdgeId}
+            <button type="button" class="btn-reset" onclick={cancelEdit}>Cancel</button>
+          {/if}
+        </div>
       </form>
     {/if}
 
@@ -584,6 +721,57 @@ import { onMount } from 'svelte';
 
   textarea {
     resize: vertical;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .panel-actions {
+    display: flex;
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+  }
+
+  .edge-actions {
+    display: inline-flex;
+    gap: 0.4rem;
+    margin-left: 0.8rem;
+  }
+
+  .btn-edit,
+  .btn-delete,
+  .btn-reset {
+    min-height: 42px;
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .btn-edit {
+    border: 2px solid #83a6ff;
+    background: #f0f4ff;
+    color: #0d2f64;
+  }
+
+  .btn-edit:hover {
+    background: #d8e4ff;
+  }
+
+  .btn-delete {
+    border: 2px solid #f5c6cb;
+    background: #fde8eb;
+    color: #8d1b1f;
+  }
+
+  .btn-delete:hover {
+    background: #f8d7da;
   }
 
   .btn-save {
